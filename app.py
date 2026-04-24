@@ -5,10 +5,18 @@ from agents.copy_agent import generate_copy
 from agents.packaging_agent import generate_report
 from agents.judge_agent import evaluate_plan
 
+# Page Config
 st.set_page_config(page_title="🎓 Event Planning Assistant", page_icon="🎓", layout="wide")
 st.title("🎓 Event Planning Assistant")
 st.markdown("*AI-powered event planning — in one click.*")
 
+# Initialize Session State (Memory Box)
+if 'final_report' not in st.session_state:
+    st.session_state.final_report = None
+if 'evaluation' not in st.session_state:
+    st.session_state.evaluation = None
+
+# Sidebar Inputs
 with st.sidebar:
     st.header("📋 Event Details")
     event_type = st.selectbox("Event Type", ["College Tech Fest", "Cultural Night", "Seminar", "Alumni Meet", "Other"])
@@ -18,68 +26,65 @@ with st.sidebar:
     theme_pref = st.selectbox("Theme Preference", ["modern", "cyberpunk", "rustic", "elegant"])
     generate_btn = st.button("🚀 Generate Event Plan", type="primary")
 
-# Initialize session state to store the report and evaluation
-if 'final_report' not in st.session_state:
-    st.session_state.final_report = None
-if 'evaluation' not in st.session_state:
-    st.session_state.evaluation = None
-
+# Main Logic
 if generate_btn:
     with st.spinner("🤖 Agents are working..."):
         
-        # Step 1: Research
+        # 1. Research
         with st.status("🔍 Researching venues...", expanded=True) as status:
             venues = search_venues(event_type, location, budget)
             status.update(label=f"✅ Found {len(venues)} venues", state="complete")
         
-        # Step 2: Design
+        # 2. Design
         with st.status("🎨 Creating theme...", expanded=True) as status:
             theme = generate_theme(venues, event_type, theme_pref)
             status.update(label="✅ Theme ready", state="complete")
         
-        # Step 3: Copy
+        # 3. Copy
         with st.status("✍️ Writing copy...", expanded=True) as status:
             copy = generate_copy(venues, theme, event_type, guest_count)
             status.update(label="✅ Copy ready", state="complete")
         
-        # Step 4: Package
-        with st.status("📦 Creating report...", expanded=True) as status:
+        # 4. Package & Judge
+        with st.status("📦 Creating report & evaluating...", expanded=True) as status:
             event_details = {
                 "event_type": event_type,
                 "budget": budget,
                 "location": location,
                 "guest_count": guest_count
             }
-            report = generate_report({"venues": venues}, theme, copy, event_details)
             
-            # Step 5: Judge (LLM-as-Judge)
-            evaluation = evaluate_plan(report, event_details)
+            # Generate Report
+            report_text = generate_report({"venues": venues}, theme, copy, event_details)
             
-            # Add evaluation to the report text
-            report += f"""
+            # Evaluate Report (LLM-as-Judge)
+            evaluation_result = evaluate_plan(report_text, event_details)
+            
+            # Append Evaluation to Report
+            final_output = report_text + f"""
 ---
 
 ## 🧠 AI Quality Evaluation
 
-**Overall Score:** {evaluation['overall_score']}/10 ⭐
+**Overall Score:** {evaluation_result['overall_score']}/10 ⭐
 
 | Criteria | Score |
 |----------|-------|
-| Completeness | {evaluation['breakdown']['completeness']}/10 |
-| Creativity | {evaluation['breakdown']['creativity']}/10 |
-| Budget Adherence | {evaluation['breakdown']['budget_adherence']}/10 |
-| Clarity | {evaluation['breakdown']['clarity']}/10 |
+| Completeness | {evaluation_result['breakdown']['completeness']}/10 |
+| Creativity | {evaluation_result['breakdown']['creativity']}/10 |
+| Budget Adherence | {evaluation_result['breakdown']['budget_adherence']}/10 |
+| Clarity | {evaluation_result['breakdown']['clarity']}/10 |
 
-**Feedback:** {evaluation['feedback']}
+**Feedback:** {evaluation_result['feedback']}
 """
             
-            # Save to session state
-            st.session_state.final_report = report
-            st.session_state.evaluation = evaluation
+            # Save to Memory Box
+            st.session_state.final_report = final_output
+            st.session_state.evaluation = evaluation_result
             
             status.update(label="✅ Done!", state="complete")
 
-# Display the report if it exists in session state
+# Display Results from Memory Box
 if st.session_state.final_report:
     st.subheader("📄 Your Event Plan")
     st.markdown(st.session_state.final_report)
