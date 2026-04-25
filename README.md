@@ -81,117 +81,165 @@ The app is deployed live on **Railway** and accessible publicly.
 
 ## 🏗️ Architecture & Workflow
 
-### High-Level Flow
+### High-Level System Flow
 
+```mermaid
+flowchart TD
+    USER["👤 User Input\nEvent Type · Location · Budget · Guests · Theme"]
+    UI["🖥️ app.py — Streamlit Orchestrator\nSession State · Status Widgets · Download Button"]
+
+    USER --> UI
+
+    UI --> R["🔍 Research Agent\nresearch_agent.py"]
+    UI --> D["🎨 Design Agent\ndesign_agent.py"]
+    UI --> C["✍️ Copy Agent\ncopy_agent.py"]
+
+    R -->|venues list| PKG
+    D -->|theme dict| PKG
+    C -->|copy dict| PKG
+
+    PKG["📦 Packaging Agent\npackaging_agent.py\nReport Assembly + Budget Breakdown"]
+    PKG -->|markdown report| J
+
+    J["🧠 Judge Agent\njudge_agent.py\nLLM-as-Judge · Quality Scoring"]
+    J --> OUT
+
+    OUT["📄 Final Event Plan\nMarkdown Report + AI Score\nRendered in UI · Downloadable .md"]
+
+    subgraph APIs["🌐 External APIs"]
+        TAV["🔎 Tavily Search API\nReal-time venue discovery"]
+        GEM["🤖 Google Gemini API\nCreative generation & evaluation"]
+    end
+
+    R -- search query --> TAV
+    TAV -- venue results --> R
+    D -- prompt --> GEM
+    C -- prompt --> GEM
+    J -- prompt --> GEM
+    GEM -- JSON response --> D
+    GEM -- JSON response --> C
+    GEM -- score + feedback --> J
+
+    style USER fill:#e3f2fd,stroke:#1565c0
+    style UI  fill:#ede7f6,stroke:#4527a0
+    style R   fill:#e8f5e9,stroke:#2e7d32
+    style D   fill:#e8f5e9,stroke:#2e7d32
+    style C   fill:#e8f5e9,stroke:#2e7d32
+    style PKG fill:#e8f5e9,stroke:#2e7d32
+    style J   fill:#fff8e1,stroke:#f57f17
+    style OUT fill:#f3e5f5,stroke:#6a1b9a
+    style TAV fill:#fce4ec,stroke:#880e4f
+    style GEM fill:#fce4ec,stroke:#880e4f
 ```
-User Input (Streamlit Sidebar)
-       │
-       ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     app.py  (Orchestrator)                  │
-│  Streamlit UI · Session State · Status Spinners · Download  │
-└─────────┬──────────────┬──────────────┬────────────────────-┘
-          │              │              │
-          ▼              ▼              ▼
-  ┌──────────────┐ ┌──────────────┐ ┌──────────────────────┐
-  │ Research     │ │ Design       │ │ Copy                 │
-  │ Agent        │ │ Agent        │ │ Agent                │
-  │              │ │              │ │                      │
-  │ Tavily API   │ │ Gemini API   │ │ Gemini API           │
-  │ → Venue list │ │ → Theme JSON │ │ → Invitation,        │
-  └──────┬───────┘ └──────┬───────┘ │   MC Script, Posts   │
-         │                │         └──────────┬───────────-┘
-         └────────────────┴──────────────────-┐│
-                                              ▼▼
-                                   ┌───────────────────┐
-                                   │ Packaging Agent   │
-                                   │                   │
-                                   │ Merges all data   │
-                                   │ + Budget calc     │
-                                   │ → Markdown report │
-                                   └────────┬──────────┘
-                                            │
-                                            ▼
-                                   ┌───────────────────┐
-                                   │  Judge Agent      │
-                                   │                   │
-                                   │  Gemini API       │
-                                   │  → Score 1-10     │
-                                   │  → Feedback text  │
-                                   └────────┬──────────┘
-                                            │
-                                            ▼
-                                   ┌───────────────────┐
-                                   │  Final Output     │
-                                   │                   │
-                                   │  Rendered in UI   │
-                                   │  + Download .md   │
-                                   └───────────────────┘
-```
+
+---
 
 ### Detailed Agent Pipeline
 
+```mermaid
+flowchart LR
+    subgraph INPUT["INPUT — Streamlit Sidebar"]
+        ET["Event Type"]
+        LOC["Location / City"]
+        BUD["Budget $$$"]
+        GC["Guest Count"]
+        TP["Theme Preference"]
+    end
+
+    subgraph STEP1["Step 1 — Research Agent"]
+        direction TB
+        R1["search_venues()\nevent_type, location, budget"]
+        R2["Tavily Search API\nquery: venues in city under $budget"]
+        R3["List of venue dicts\nname · address · capacity · price"]
+        R1 --> R2 --> R3
+        R_FB["⚠️ Fallback:\nMock venue list"]
+    end
+
+    subgraph STEP2["Step 2 — Design Agent"]
+        direction TB
+        D1["generate_theme()\nvenues, event_type, theme_pref"]
+        D2["Gemini API\nPrompt → JSON theme"]
+        D3["theme dict\nname · colors · mood · layout"]
+        D1 --> D2 --> D3
+        D_FB["⚠️ Fallback:\nDefault modern theme"]
+    end
+
+    subgraph STEP3["Step 3 — Copy Agent"]
+        direction TB
+        C1["generate_copy()\nvenues, theme, event_type, guests"]
+        C2["Gemini API\nPrompt → JSON copy"]
+        C3["copy dict\ninvitation · mc_script · posts"]
+        C1 --> C2 --> C3
+        C_FB["⚠️ Fallback:\nTemplate copy text"]
+    end
+
+    subgraph STEP4["Step 4 — Packaging Agent"]
+        direction TB
+        P1["generate_report()\nAll agent outputs + event_details"]
+        P2["Pure Python\nNo API call"]
+        P3["Budget split\nVenue 40% · Catering 30%\nDecor 15% · AV 10% · Misc 5%"]
+        P4["Markdown report string"]
+        P1 --> P2 --> P3 --> P4
+    end
+
+    subgraph STEP5["Step 5 — Judge Agent (LLM-as-Judge)"]
+        direction TB
+        J1["evaluate_plan()\nreport_text, event_details"]
+        J2["Gemini API\nPrompt → JSON score"]
+        J3["Score dict\noverall · completeness\ncreativity · clarity"]
+        J1 --> J2 --> J3
+        J_FB["⚠️ Fallback:\nScore 7/10 + generic feedback"]
+    end
+
+    subgraph OUTPUT["OUTPUT — Streamlit Main Area"]
+        O1["st.markdown(final_report)"]
+        O2["st.download_button(.md file)"]
+    end
+
+    INPUT --> STEP1 --> STEP2 --> STEP3 --> STEP4 --> STEP5 --> OUTPUT
 ```
-INPUT LAYER
-──────────────────────────────────────────────────────────────
-Event Type  ─┐
-Location    ─┼──▶  app.py (Streamlit Sidebar)
-Budget      ─┤
-Guest Count ─┤
-Theme Pref  ─┘
 
-AGENT LAYER (Sequential Pipeline)
-──────────────────────────────────────────────────────────────
+---
 
-[Step 1] research_agent.py
-  Input  : event_type, location, budget
-  Tool   : Tavily Search API
-  Output : List[Dict] → [ { name, address, capacity, price }, ... ]
-  Fallback: Returns hardcoded mock venues on API failure
+### Data Flow Between Agents
 
-     ↓ venues (list)
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as app.py (Streamlit)
+    participant RA as Research Agent
+    participant DA as Design Agent
+    participant CA as Copy Agent
+    participant PA as Packaging Agent
+    participant JA as Judge Agent
+    participant TAV as Tavily API
+    participant GEM as Gemini API
 
-[Step 2] design_agent.py
-  Input  : venues (list), event_type, theme_pref
-  Tool   : Google Gemini API
-  Prompt : "Generate a JSON theme with: name, color_palette (5 hex
-            colors), mood_keywords, layout_suggestion"
-  Output : Dict → { theme_name, colors, mood, layout }
-  Fallback: Returns default modern theme JSON
+    User->>UI: Fill sidebar + click Generate
+    UI->>RA: search_venues(event_type, location, budget)
+    RA->>TAV: Search query
+    TAV-->>RA: Venue results (JSON)
+    RA-->>UI: venues: List[Dict]
 
-     ↓ theme (dict)
+    UI->>DA: generate_theme(venues, event_type, theme_pref)
+    DA->>GEM: Prompt for theme JSON
+    GEM-->>DA: theme JSON response
+    DA-->>UI: theme: Dict
 
-[Step 3] copy_agent.py
-  Input  : venues (list), theme (dict), event_type, guest_count
-  Tool   : Google Gemini API
-  Prompt : "Write a JSON with: invitation_text, mc_script,
-            social_media_posts (list of 3)"
-  Output : Dict → { invitation, mc_script, social_posts[] }
-  Fallback: Returns template copy text
+    UI->>CA: generate_copy(venues, theme, event_type, guests)
+    CA->>GEM: Prompt for copy JSON
+    GEM-->>CA: copy JSON response
+    CA-->>UI: copy: Dict
 
-     ↓ copy (dict)
+    UI->>PA: generate_report(venues, theme, copy, event_details)
+    PA-->>UI: report_text: str (Markdown)
 
-[Step 4] packaging_agent.py
-  Input  : venues, theme, copy, event_details (type/budget/location/guests)
-  Tool   : Pure Python (no external API)
-  Logic  : Formats all data into Markdown sections
-           + Calculates budget split (venue 40%, catering 30%,
-             decor 15%, A/V 10%, misc 5%)
-  Output : String → Full Markdown document
+    UI->>JA: evaluate_plan(report_text, event_details)
+    JA->>GEM: Prompt for quality score JSON
+    GEM-->>JA: score JSON response
+    JA-->>UI: evaluation: Dict
 
-     ↓ report_text (str)
-
-[Step 5] judge_agent.py
-  Input  : report_text, event_details
-  Tool   : Google Gemini API
-  Prompt : "Rate this event plan JSON: overall_score, breakdown
-            (completeness, creativity, budget_adherence, clarity), feedback"
-  Output : Dict → { overall_score, breakdown{}, feedback }
-
-OUTPUT LAYER
-──────────────────────────────────────────────────────────────
-report_text + evaluation → Appended together → Displayed via
-st.markdown() → Available as .md download
+    UI->>User: Render final plan + download button
 ```
 
 ---
