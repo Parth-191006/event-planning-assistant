@@ -65,7 +65,6 @@ The system is deployed live on Railway with a user-friendly Streamlit interface.
 ---
 
 ## 🏗️ Architecture Diagram
-
 graph TD
     User[👤 User Input<br/>Event Type, Location, Budget, Guests, Theme] --> UI[🖥️ Streamlit Web UI]
     UI --> Research[🔍 Research Agent<br/>Venue Discovery]
@@ -107,5 +106,3 @@ graph TD
     class Output,Download output;
     class Deploy deploy;
     class LLMs llmsub;
-
-
